@@ -1,5 +1,6 @@
 import ssl
 import re
+import logging
 import unicodedata
 import requests
 from requests.adapters import HTTPAdapter
@@ -7,6 +8,8 @@ from urllib3.util.ssl_ import create_urllib3_context
 from bs4 import BeautifulSoup, Tag
 from models.academic import Subject, ElectiveBank
 from scraper.base import Authenticator, CurriculumFetcher, AcademicHistoryFetcher
+
+log = logging.getLogger(__name__)
 
 _PASSING_GRADE = 3.0
 
@@ -90,34 +93,46 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         return None
 
     def login(self, username: str, password: str) -> bool:
+        log.info("login: SSO ayudame2")
         sso = self._session.post(
             "https://ayudame2.udea.edu.co/php_mua_externos/",
             data={"usuario": username, "clave": password},
             allow_redirects=True,
         )
+        log.info("login: SSO status=%d final_url=%s", sso.status_code, sso.url)
         if sso.status_code != 200:
+            log.warning("login: SSO falló con status=%d", sso.status_code)
             return False
         self._session.cookies.set("user_name", username, domain=".udea.edu.co", path="/")
 
         self._session.get(self._HISTORIA_URL + "?app=consultar", allow_redirects=True)
+        log.info("login: reauth tsone")
         h_tsone = self._do_reauth("tsone.udea.edu.co", password)
         if h_tsone is None:
             tsone_cookie = self._session.cookies.get("udeasecure", domain=".udea.edu.co")
             if not tsone_cookie:
+                log.warning("login: reauth tsone falló, udeasecure vacío")
                 return False
             self._udeasecure = tsone_cookie
         else:
             self._udeasecure = self._session.cookies.get("udeasecure", domain=".udea.edu.co") or ""
+        log.info("login: reauth tsone ok | udeasecure presente=%s", bool(self._udeasecure))
 
         self._session.get(self._FALTANTES_URL + "?app=consultar", allow_redirects=True)
+        log.info("login: reauth ayudame2")
         faltantes_text = self._do_reauth("ayudame2.udea.edu.co", password)
         if faltantes_text:
             self._faltantes_cache = BeautifulSoup(faltantes_text, "lxml")
+            log.info("login: faltantes cacheado desde reauth")
         else:
+            log.warning("login: reauth ayudame2 sin auto-form, haciendo GET faltantes")
             resp = self._session.get(self._FALTANTES_URL + "?app=consultar", allow_redirects=True)
             self._faltantes_cache = BeautifulSoup(resp.text, "lxml")
+            log.info("login: faltantes GET status=%d final_url=%s", resp.status_code, resp.url)
 
-        return self.validate_session()
+        valid = self.validate_session()
+        log.info("login: validate_session=%s", valid)
+        return valid
 
     def logout(self) -> None:
         self._session.cookies.clear()
@@ -187,9 +202,12 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         return [c for c in codes if c]
 
     def _fetch_passed_with_names(self) -> dict[str, tuple[float, str]]:
+        sem_codes = self._fetch_semester_codes()
+        log.info("_fetch_passed_with_names: %d semestres encontrados", len(sem_codes))
         passed: dict[str, tuple[float, str]] = {}
-        for sem_code in self._fetch_semester_codes():
+        for sem_code in sem_codes:
             passed.update(self._fetch_semester_grades(sem_code))
+        log.info("_fetch_passed_with_names: %d materias aprobadas", len(passed))
         return passed
 
     def fetch_passed_subjects(self) -> dict[str, float]:
@@ -201,6 +219,7 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         soup = self._fetch_faltantes_soup()
         card_text = soup.select_one("p.card-text")
         if not card_text:
+            log.warning("fetch_student_info: no se encontró p.card-text en faltantes")
             self._student_cache = ("", "", "")
             return self._student_cache
         text = card_text.get_text(separator="\n")
@@ -209,6 +228,10 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         student_name = name_m.group(1).strip() if name_m else ""
         program_code = prog_m.group(1).strip()  if prog_m  else ""
         program_name = prog_m.group(2).strip()  if prog_m  else ""
+        log.info(
+            "fetch_student_info: has_name=%s has_program=%s program_code=%s",
+            bool(student_name), bool(program_code), program_code,
+        )
         self._student_cache = (student_name, program_name, program_code)
         return self._student_cache
 
@@ -236,6 +259,7 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         banks: list[ElectiveBank] = []
         alert_div = soup.select_one("div.alert.alert-warning")
         if not alert_div:
+            log.warning("fetch_elective_banks: no se encontró div.alert.alert-warning en faltantes")
             return banks
 
         current_name     = ""
@@ -294,14 +318,18 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         passed            = {code: grade for code, (grade, _) in passed_with_names.items()}
         _, _, program_code = self.fetch_student_info()
         current = set(self.fetch_current_subjects())
+        log.info("fetch_curriculum: cursando=%d | program_code=%s pensum_version=%d",
+                 len(current), program_code, self._pensum_version)
 
-        resp = self._session.get(
-            f"{self._CURSUM_URL}/{program_code}/{self._pensum_version}",
-            allow_redirects=True,
-        )
+        cursum_url = f"{self._CURSUM_URL}/{program_code}/{self._pensum_version}"
+        resp = self._session.get(cursum_url, allow_redirects=True)
+        log.info("fetch_curriculum: cursum status=%d url=%s", resp.status_code, resp.url)
         cursum_items = resp.json()
         if not isinstance(cursum_items, list):
+            log.error("fetch_curriculum: cursum no devolvió lista, tipo=%s contenido=%r",
+                      type(cursum_items).__name__, str(cursum_items)[:200])
             return []
+        log.info("fetch_curriculum: cursum devolvió %d materias", len(cursum_items))
 
         cursum_codes   = {str(item["materia"]) for item in cursum_items}
         name_to_code   = {self._normalize_name(item["nombreMateria"]): str(item["materia"]) for item in cursum_items}
@@ -312,6 +340,7 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
                 canonical  = _NAME_ALIASES.get(normalized, normalized)
                 new_code   = name_to_code.get(canonical)
                 if new_code and new_code not in homologation:
+                    log.info("fetch_curriculum: homologación %s→%s (%s)", old_code, new_code, name)
                     homologation[new_code] = grade
 
         subjects: list[Subject] = []

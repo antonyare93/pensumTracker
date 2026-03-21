@@ -1,12 +1,19 @@
+import os
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers.academic_router import router
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+
 app = FastAPI(title="Pensum Tracker API")
 
-import os
-
-_extra = os.getenv("ALLOWED_ORIGINS", "")
+_extra   = os.getenv("ALLOWED_ORIGINS", "")
 _origins = [o.strip() for o in _extra.split(",") if o.strip()]
 
 app.add_middleware(
