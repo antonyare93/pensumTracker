@@ -31,7 +31,7 @@ class AcademicRecordBuilder:
         mandatory_total     = sum(s.credits for s in subjects if s.obligatoria and s.code not in bank_codes)
         mandatory_completed = sum(s.credits for s in subjects if s.obligatoria and s.cursada and s.code not in bank_codes)
         mandatory_in_progress = sum(s.credits for s in subjects if s.obligatoria and s.cursando and not s.cursada and s.code not in bank_codes)
-        elective_total      = sum(b.credits_required for b in elective_banks)
+        elective_total      = sum({b.credits_required for b in elective_banks})
         elective_completed  = sum(b.credits_approved for b in elective_banks)
         elective_in_progress = sum(
             s.credits for s in subjects if s.cursando and not s.cursada and s.code in bank_codes
