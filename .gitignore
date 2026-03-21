@@ -1,20 +1,58 @@
-.venv
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
+# Entornos virtuales
+.venv/
 venv/
+env/
 ENV/
 env.bak/
 venv.bak/
-.idea/
-.vscode/
-.DS_Store
-*.log
+
+# Bytecode y compilados
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+.Python
+
+# Variables de entorno
+.env
+.env.*
+*.env
+
+# Distribución y empaquetado
+dist/
+build/
+*.egg-info/
+*.egg
+*.whl
+
+# Pytest y cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Cachés de herramientas
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+
+# Base de datos y logs
 *.sqlite3
 *.db
+*.log
 *.bak
+
+# Claude Code y skills
+.claude/
+.agents/
+
+# Editores e IDEs
+.idea/
+.vscode/
 *.swp
-test_*.py
+*.swo
+
+# macOS
+.DS_Store
