@@ -5,8 +5,8 @@ import unicodedata
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.ssl_ import create_urllib3_context
-from bs4 import BeautifulSoup, Tag
-from models.academic import Subject, ElectiveBank
+from bs4 import BeautifulSoup
+from models.academic import Subject
 from scraper.base import Authenticator, CurriculumFetcher, AcademicHistoryFetcher
 
 log = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class _LegacyTLSAdapter(HTTPAdapter):
 
 class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
     _HISTORIA_URL = "https://tsone.udea.edu.co/php_historia_estudiante/"
-    _FALTANTES_URL = "https://ayudame2.udea.edu.co/php_materias_faltantes_estudiante/"
+    _INFO_URL = "https://tsone.udea.edu.co/php_constancia_estudiante/"
     _CURSUM_URL = "https://wsingenieria.udea.edu.co:8094/cursum/ingenieria/pensum"
 
     def __init__(self, cookies: dict[str, str], pensum_version: int = 0):
@@ -63,7 +63,7 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         self._pensum_version = pensum_version
         self._udeasecure = cookies.get("udeasecure", "")
         self._student_cache: tuple[str, str, str] | None = None
-        self._faltantes_cache: BeautifulSoup | None = None
+        self._info_cache: BeautifulSoup | None = None
 
     def _do_reauth(self, host: str, password: str) -> str | None:
         relogin_base = f"https://{host}/php_relogin/"
@@ -92,6 +92,7 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
             return None
 
         h = data["hash"]
+        self._udeasecure = h
         self._session.cookies.set(
             "udeasecure", h, domain=".udea.edu.co", path="/")
 
@@ -124,35 +125,16 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         self._session.get(self._HISTORIA_URL +
                           "?app=consultar", allow_redirects=True)
         log.info("login: reauth tsone")
-        h_tsone = self._do_reauth("tsone.udea.edu.co", password)
-        if h_tsone is None:
-            tsone_cookie = self._session.cookies.get(
-                "udeasecure", domain=".udea.edu.co")
-            if not tsone_cookie:
-                log.warning("login: reauth tsone falló, udeasecure vacío")
-                return False
-            self._udeasecure = tsone_cookie
-        else:
-            self._udeasecure = self._session.cookies.get(
-                "udeasecure", domain=".udea.edu.co") or ""
-        log.info("login: reauth tsone ok | udeasecure presente=%s",
-                 bool(self._udeasecure))
+        self._do_reauth("tsone.udea.edu.co", password)
+        if not self._udeasecure:
+            log.warning("login: reauth tsone falló, udeasecure vacío")
+            return False
+        log.info("login: reauth tsone ok | udeasecure presente=True")
 
-        self._session.get(self._FALTANTES_URL +
-                          "?app=consultar", allow_redirects=True)
-        log.info("login: reauth ayudame2")
-        faltantes_text = self._do_reauth("ayudame2.udea.edu.co", password)
-        if faltantes_text:
-            self._faltantes_cache = BeautifulSoup(faltantes_text, "lxml")
-            log.info("login: faltantes cacheado desde reauth")
-        else:
-            log.warning(
-                "login: reauth ayudame2 sin auto-form, haciendo GET faltantes")
-            resp = self._session.get(
-                self._FALTANTES_URL + "?app=consultar", allow_redirects=True)
-            self._faltantes_cache = BeautifulSoup(resp.text, "lxml")
-            log.info("login: faltantes GET status=%d final_url=%s",
-                     resp.status_code, resp.url)
+        resp = self._tsone_get(self._INFO_URL + "?app=consultar")
+        self._info_cache = BeautifulSoup(resp.text, "lxml")
+        log.info("login: constancia GET status=%d final_url=%s",
+                 resp.status_code, resp.url)
 
         valid = self.validate_session()
         log.info("login: validate_session=%s", valid)
@@ -162,7 +144,7 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         self._session.cookies.clear()
         self._udeasecure = ""
         self._student_cache = None
-        self._faltantes_cache = None
+        self._info_cache = None
 
     def _tsone_get(self, url: str) -> requests.Response:
         if self._udeasecure:
@@ -170,12 +152,50 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
                 "udeasecure", self._udeasecure, domain=".udea.edu.co", path="/")
         return self._session.get(url, allow_redirects=True)
 
-    def _fetch_faltantes_soup(self) -> BeautifulSoup:
-        if self._faltantes_cache is None:
-            resp = self._session.get(
-                self._FALTANTES_URL + "?app=consultar", allow_redirects=True)
-            self._faltantes_cache = BeautifulSoup(resp.text, "lxml")
-        return self._faltantes_cache
+    def _tsone_post(self, url: str, data: dict) -> requests.Response:
+        if self._udeasecure:
+            self._session.cookies.set(
+                "udeasecure", self._udeasecure, domain=".udea.edu.co", path="/")
+        return self._session.post(url, data=data, allow_redirects=True)
+
+    def _fetch_historia_soup(self, program_code: str) -> BeautifulSoup:
+        resp = self._tsone_get(self._HISTORIA_URL + "?app=consultar")
+        soup = BeautifulSoup(resp.text, "lxml")
+        if "php_programas_estudiante" not in resp.url:
+            return soup
+        log.info(
+            "_fetch_historia_soup: selector de programa detectado, seleccionando %s", program_code)
+        option = soup.find("option", {"value": program_code})
+        if not option:
+            log.warning(
+                "_fetch_historia_soup: programa %s no encontrado en el selector", program_code)
+            return soup
+        form2 = soup.find("form", {"id": "form2"})
+        if not form2:
+            log.warning("_fetch_historia_soup: form2 no encontrado")
+            return soup
+        action = form2.get("action") or resp.url
+        form_data: dict[str, str] = {
+            "facultad":        option.get("data-facultad", ""),
+            "nombre_facultad": option.get("data-nombre-facultad", ""),
+            "programa":        program_code,
+            "nombre_programa": option.get_text(strip=True),
+            "maximo_semestre": option.get("data-maximo-semestre", ""),
+            "version":         option.get("data-version", ""),
+            "estado":          option.get("data-estado", ""),
+            "tipo":            option.get("data-tipo", ""),
+            "mas_programas":   "",
+            "api":             "programasudea",
+        }
+        self._tsone_post(action, form_data)
+        hist_resp = self._tsone_get(self._HISTORIA_URL + "?app=consultar")
+        return BeautifulSoup(hist_resp.text, "lxml")
+
+    def _fetch_info_soup(self) -> BeautifulSoup:
+        if self._info_cache is None:
+            resp = self._tsone_get(self._INFO_URL + "?app=consultar")
+            self._info_cache = BeautifulSoup(resp.text, "lxml")
+        return self._info_cache
 
     def validate_session(self) -> bool:
         resp = self._tsone_get(self._HISTORIA_URL + "?app=consultar")
@@ -223,8 +243,8 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         return result
 
     def _fetch_semester_codes(self) -> list[str]:
-        resp = self._tsone_get(self._HISTORIA_URL + "?app=consultar")
-        soup = BeautifulSoup(resp.text, "lxml")
+        _, _, program_code = self.fetch_student_info()
+        soup = self._fetch_historia_soup(program_code)
         codes = [el.get("data-semestre")
                  for el in soup.find_all(attrs={"data-semestre": True})]
         return [c for c in codes if c]
@@ -245,17 +265,11 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
     def fetch_student_info(self) -> tuple[str, str, str]:
         if self._student_cache:
             return self._student_cache
-        soup = self._fetch_faltantes_soup()
-        card_text = soup.select_one("p.card-text")
-        if not card_text:
-            log.warning(
-                "fetch_student_info: no se encontró p.card-text en faltantes")
-            self._student_cache = ("", "", "")
-            return self._student_cache
-        text = card_text.get_text(separator="\n")
-        name_m = re.search(r"Estudiante\s*[:\-]?\s*\[\d+\]\s+(.+)", text)
+        soup = self._fetch_info_soup()
+        text = soup.get_text(separator="\n")
+        name_m = re.search(r"Estudiante\s*[:\-]?\s*(.+)", text)
         prog_m = re.search(r"Programa\s*[:\-]?\s*\[(\d+)\]\s+(.+)", text)
-        student_name = name_m.group(1).strip() if name_m else ""
+        student_name = name_m.group(1).strip().lstrip(":").strip() if name_m else ""
         program_code = prog_m.group(1).strip() if prog_m else ""
         program_name = prog_m.group(2).strip() if prog_m else ""
         log.info(
@@ -266,75 +280,20 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         return self._student_cache
 
     def fetch_current_subjects(self) -> list[str]:
-        soup = self._fetch_faltantes_soup()
+        soup = self._fetch_info_soup()
+        h5 = soup.find("h5", string=re.compile(r"MATERIAS MATRICULADAS", re.IGNORECASE))
+        if not h5:
+            log.warning("fetch_current_subjects: no se encontró h5 'MATERIAS MATRICULADAS'")
+            return []
         codes: list[str] = []
-        for h6 in soup.find_all("h6"):
-            if "MATERIAS OPCIONALES CON NOTA PENDIENTE" in h6.get_text():
-                ul = h6.find_next_sibling("ul")
-                if not ul:
-                    break
-                for li in ul.find_all("li"):
-                    strong = li.find("strong")
-                    if not strong:
-                        continue
-                    tail = li.get_text(strip=True)[len(
-                        strong.get_text(strip=True)):]
-                    code_m = re.search(r"c[oó]digo:\s*(\d+)", tail)
-                    if code_m:
-                        codes.append(code_m.group(1))
-                break
+        for div in h5.find_all_next("div", class_="alert-success"):
+            code_m = re.search(r"CÓDIGO\s*[:\-]?\s*(\d+)", div.get_text(), re.IGNORECASE)
+            if code_m:
+                codes.append(code_m.group(1))
+        log.info("fetch_current_subjects: %d materias en curso", len(codes))
         return codes
 
-    def fetch_elective_banks(self) -> list[ElectiveBank]:
-        soup = self._fetch_faltantes_soup()
-        banks: list[ElectiveBank] = []
-        alert_div = soup.select_one("div.alert.alert-warning")
-        if not alert_div:
-            log.warning(
-                "fetch_elective_banks: no se encontró div.alert.alert-warning en faltantes")
-            return banks
-
-        current_name = ""
-        current_required = 0
-        current_approved = 0
-
-        for child in alert_div.children:
-            if not isinstance(child, Tag):
-                continue
-            if child.name == "h6" and "alert-heading" in child.get("class", []):
-                current_name = child.get_text(
-                    strip=True).replace("BANCO:", "").strip()
-                current_required = 0
-                current_approved = 0
-            elif child.name == "p" and current_name:
-                text = child.get_text(strip=True)
-                req_m = re.search(r"debes ver:\s*(\d+)", text)
-                apr_m = re.search(r"tienes aprobados:\s*(\d+)", text)
-                if req_m:
-                    current_required = int(req_m.group(1))
-                if apr_m:
-                    current_approved = int(apr_m.group(1))
-            elif child.name == "ul" and current_name:
-                codes: list[str] = []
-                for li in child.find_all("li"):
-                    strong = li.find("strong")
-                    if not strong:
-                        continue
-                    tail = li.get_text(strip=True)[len(
-                        strong.get_text(strip=True)):]
-                    code_m = re.search(r"c[oó]digo:\s*(\d+)", tail)
-                    if code_m:
-                        codes.append(code_m.group(1))
-                banks.append(ElectiveBank(
-                    name=current_name,
-                    credits_required=current_required,
-                    credits_approved=current_approved,
-                    subject_codes=codes,
-                ))
-                current_name = ""
-        return banks
-
-    def fetch_program_info(self, program_code: str) -> tuple[int, list[int]]:
+    def fetch_program_info(self, program_code: str) -> tuple[int, list[int], int]:
         resp = self._session.get(
             "https://wsingenieria.udea.edu.co:8094/cursum/ingenieria/programas",
             allow_redirects=True,
@@ -345,14 +304,15 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
                 raw = p.get("versiones", "")
                 versiones = [int(v)
                              for v in raw.split(",") if v.strip().isdigit()]
-                return version_actual, versiones
-        return 0, []
+                total_credits = p.get("creditosGrado", 0)
+                return version_actual, versiones, total_credits
+        return 0, [], 0
 
     def fetch_curriculum(self) -> list[Subject]:
+        _, _, program_code = self.fetch_student_info()
         passed_with_names = self._fetch_passed_with_names()
         passed = {code: grade for code,
                   (grade, _) in passed_with_names.items()}
-        _, _, program_code = self.fetch_student_info()
         current = set(self.fetch_current_subjects())
         log.info("fetch_curriculum: cursando=%d | program_code=%s pensum_version=%d",
                  len(current), program_code, self._pensum_version)
@@ -396,6 +356,7 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
                 semester=item["nivel"],
                 obligatoria=item.get(
                     "tipoMateria", "OBLIGATORIA") == "OBLIGATORIA",
+                elective_bank=item.get("nombreBancoElectiva", "").strip() or None,
                 prerequisites=[str(r["materiaRequisito"])
                                for r in reqs if r["tipoRequisito"] == "PRERREQ"],
                 corequisites=[str(r["materiaRequisito"])

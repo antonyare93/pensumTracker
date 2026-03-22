@@ -1,3 +1,4 @@
+from collections import defaultdict
 from models.academic import Subject, ElectiveBank, AcademicRecord
 
 
@@ -10,8 +11,8 @@ class AcademicRecordBuilder:
         pensum_version: int,
         version_actual: int,
         versiones: list[int],
+        total_credits: int,
         subjects: list[Subject],
-        elective_banks: list[ElectiveBank],
     ) -> AcademicRecord:
         unlocked = {s.code for s in subjects if s.cursada or s.cursando}
         enriched: list[Subject] = []
@@ -25,17 +26,24 @@ class AcademicRecordBuilder:
             else:
                 status = "locked"
             enriched.append(s.model_copy(update={"status": status}))
-        subjects = enriched
 
-        bank_codes          = {code for b in elective_banks for code in b.subject_codes}
-        mandatory_total     = sum(s.credits for s in subjects if s.obligatoria and s.code not in bank_codes)
-        mandatory_completed = sum(s.credits for s in subjects if s.obligatoria and s.cursada and s.code not in bank_codes)
-        mandatory_in_progress = sum(s.credits for s in subjects if s.obligatoria and s.cursando and not s.cursada and s.code not in bank_codes)
-        elective_total      = sum({b.credits_required for b in elective_banks})
-        elective_completed  = sum(b.credits_approved for b in elective_banks)
-        elective_in_progress = sum(
-            s.credits for s in subjects if s.cursando and not s.cursada and s.code in bank_codes
-        )
+        completed_credits = sum(s.credits for s in enriched if s.cursada)
+        in_progress_credits = sum(s.credits for s in enriched if s.cursando and not s.cursada)
+
+        bank_subjects: dict[str, list[Subject]] = defaultdict(list)
+        for s in enriched:
+            if s.elective_bank:
+                bank_subjects[s.elective_bank].append(s)
+
+        elective_banks: list[ElectiveBank] = [
+            ElectiveBank(
+                name=bank_name,
+                credits_required=sum(s.credits for s in group),
+                credits_approved=sum(s.credits for s in group if s.cursada),
+                subject_codes=[s.code for s in group],
+            )
+            for bank_name, group in sorted(bank_subjects.items())
+        ]
 
         return AcademicRecord(
             student_name=student_name,
@@ -44,9 +52,9 @@ class AcademicRecordBuilder:
             pensum_version=pensum_version,
             version_actual=version_actual,
             versiones=versiones,
-            total_credits=mandatory_total + elective_total,
-            completed_credits=mandatory_completed + elective_completed,
-            in_progress_credits=mandatory_in_progress + elective_in_progress,
+            total_credits=total_credits,
+            completed_credits=completed_credits,
+            in_progress_credits=in_progress_credits,
+            subjects=enriched,
             elective_banks=elective_banks,
-            subjects=subjects,
         )

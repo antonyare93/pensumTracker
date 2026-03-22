@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from models.academic import Subject, ElectiveBank
+from models.academic import Subject
 
 
 class Authenticator(ABC):
@@ -13,9 +13,6 @@ class Authenticator(ABC):
 class CurriculumFetcher(ABC):
     @abstractmethod
     def fetch_curriculum(self) -> list[Subject]: ...
-
-    @abstractmethod
-    def fetch_elective_banks(self) -> list[ElectiveBank]: ...
 
 
 class AcademicHistoryFetcher(ABC):

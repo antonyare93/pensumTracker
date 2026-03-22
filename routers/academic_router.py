@@ -37,7 +37,7 @@ def validate_session(body: SessionRequest):
     if not scraper.validate_session():
         log.warning("validate_session: sesión inválida o expirada")
         raise HTTPException(status_code=401, detail="Sesión inválida o expirada")
-    student_name, program_name, program_code = scraper.fetch_student_info()
+    student_name, program_name, program_code, _ = scraper.fetch_student_info()
     log.info("validate_session: ok | program_code=%s", program_code)
     return {
         "valid": True,
@@ -61,8 +61,9 @@ def login_and_fetch(body: LoginRequest) -> AcademicRecord:
     student_name, program_name, program_code = scraper.fetch_student_info()
     log.info("login: student_info | program_code=%s has_name=%s", program_code, bool(student_name))
 
-    version_actual, versiones = scraper.fetch_program_info(program_code)
-    log.info("login: program_info | version_actual=%d versiones=%s", version_actual, versiones)
+    version_actual, versiones, total_credits = scraper.fetch_program_info(program_code)
+    log.info("login: program_info | version_actual=%d versiones=%s total_credits=%d",
+             version_actual, versiones, total_credits)
 
     if body.pensum_version == 0:
         scraper._pensum_version = version_actual
@@ -73,9 +74,6 @@ def login_and_fetch(body: LoginRequest) -> AcademicRecord:
     current  = sum(1 for s in subjects if s.cursando)
     log.info("login: curriculum | total=%d cursadas=%d cursando=%d", len(subjects), passed, current)
 
-    elective_banks = scraper.fetch_elective_banks()
-    log.info("login: elective_banks | total=%d", len(elective_banks))
-
     record = AcademicRecordBuilder().build(
         student_name=student_name,
         program_name=program_name,
@@ -83,8 +81,8 @@ def login_and_fetch(body: LoginRequest) -> AcademicRecord:
         pensum_version=scraper._pensum_version,
         version_actual=version_actual,
         versiones=versiones,
+        total_credits=total_credits,
         subjects=subjects,
-        elective_banks=elective_banks,
     )
     log.info(
         "login: record construido | credits=%d/%d en_curso=%d",
@@ -101,8 +99,9 @@ def get_academic_record(body: SessionRequest) -> AcademicRecord:
     student_name, program_name, program_code = scraper.fetch_student_info()
     log.info("academic-record: student_info | program_code=%s has_name=%s", program_code, bool(student_name))
 
-    version_actual, versiones = scraper.fetch_program_info(program_code)
-    log.info("academic-record: program_info | version_actual=%d versiones=%s", version_actual, versiones)
+    version_actual, versiones, total_credits = scraper.fetch_program_info(program_code)
+    log.info("academic-record: program_info | version_actual=%d versiones=%s total_credits=%d",
+             version_actual, versiones, total_credits)
 
     if body.pensum_version == 0:
         scraper._pensum_version = version_actual
@@ -113,9 +112,6 @@ def get_academic_record(body: SessionRequest) -> AcademicRecord:
     current  = sum(1 for s in subjects if s.cursando)
     log.info("academic-record: curriculum | total=%d cursadas=%d cursando=%d", len(subjects), passed, current)
 
-    elective_banks = scraper.fetch_elective_banks()
-    log.info("academic-record: elective_banks | total=%d", len(elective_banks))
-
     record = AcademicRecordBuilder().build(
         student_name=student_name,
         program_name=program_name,
@@ -123,8 +119,8 @@ def get_academic_record(body: SessionRequest) -> AcademicRecord:
         pensum_version=scraper._pensum_version,
         version_actual=version_actual,
         versiones=versiones,
+        total_credits=total_credits,
         subjects=subjects,
-        elective_banks=elective_banks,
     )
     log.info(
         "academic-record: record construido | credits=%d/%d en_curso=%d",

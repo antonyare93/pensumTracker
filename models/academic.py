@@ -7,6 +7,7 @@ class Subject(BaseModel):
     credits: int
     semester: int | None = None
     obligatoria: bool = True
+    elective_bank: str | None = None
     prerequisites: list[str] = []
     corequisites: list[str] = []
     cursada: bool = False
@@ -32,5 +33,5 @@ class AcademicRecord(BaseModel):
     total_credits: int
     completed_credits: int
     in_progress_credits: int
-    elective_banks: list[ElectiveBank]
     subjects: list[Subject]
+    elective_banks: list[ElectiveBank] = []
