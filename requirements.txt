@@ -4,3 +4,4 @@ uvicorn>=0.34.0
 requests>=2.32.3
 beautifulsoup4>=4.13.3
 lxml>=5.4.0
+python-dotenv>=1.0.0
