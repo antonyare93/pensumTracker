@@ -86,6 +86,7 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         self._udeasecure = cookies.get("udeasecure", "")
         self._student_cache: tuple[str, str, str] | None = None
         self._info_cache: BeautifulSoup | None = None
+        self._cursum_cache: list[dict] | None = None
         # Versión del pensum en la que el estudiante está matriculado (del selector
         # de programas, atributo data-version). None si no se pudo determinar.
         self._enrolled_version: int | None = None
@@ -366,6 +367,45 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
                 return version_actual, versiones, total_credits
         return 0, [], 0
 
+    def _fetch_cursum_items(self) -> list[dict]:
+        if self._cursum_cache is not None:
+            return self._cursum_cache
+        _, _, program_code = self.fetch_student_info()
+        cursum_url = f"{self._CURSUM_URL}/{program_code}/{self._pensum_version}"
+        resp = self._session.get(cursum_url, allow_redirects=True, timeout=_TIMEOUT)
+        log.info("_fetch_cursum_items: cursum status=%d url=%s",
+                 resp.status_code, resp.url)
+        items = _parse_json(resp, "fetch_curriculum")
+        if not isinstance(items, list):
+            log.error("_fetch_cursum_items: cursum no devolvió lista, tipo=%s contenido=%r",
+                      type(items).__name__, str(items)[:200])
+            items = []
+        log.info("_fetch_cursum_items: cursum devolvió %d materias", len(items))
+        self._cursum_cache = items
+        return items
+
+    def _build_subject(self, item: dict, cursada: bool, nota: float | None, cursando: bool) -> Subject:
+        reqs = item.get("requisitos", [])
+        return Subject(
+            code=str(item["materia"]),
+            name=item["nombreMateria"],
+            credits=item["creditos"],
+            semester=item["nivel"],
+            obligatoria=item.get("tipoMateria", "OBLIGATORIA") == "OBLIGATORIA",
+            elective_bank=item.get("nombreBancoElectiva", "").strip() or None,
+            prerequisites=[str(r["materiaRequisito"])
+                           for r in reqs if r["tipoRequisito"] == "PRERREQ"],
+            corequisites=[str(r["materiaRequisito"])
+                          for r in reqs if r["tipoRequisito"] == "CORREQ"],
+            cursada=cursada,
+            nota=nota,
+            cursando=cursando,
+        )
+
+    def fetch_pensum_subjects(self) -> list[Subject]:
+        return [self._build_subject(item, False, None, False)
+                for item in self._fetch_cursum_items()]
+
     def fetch_curriculum(self) -> list[Subject]:
         _, _, program_code = self.fetch_student_info()
         passed_with_names = self._fetch_passed_with_names()
@@ -375,17 +415,9 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         log.info("fetch_curriculum: cursando=%d | program_code=%s pensum_version=%d",
                  len(current), program_code, self._pensum_version)
 
-        cursum_url = f"{self._CURSUM_URL}/{program_code}/{self._pensum_version}"
-        resp = self._session.get(cursum_url, allow_redirects=True, timeout=_TIMEOUT)
-        log.info("fetch_curriculum: cursum status=%d url=%s",
-                 resp.status_code, resp.url)
-        cursum_items = _parse_json(resp, "fetch_curriculum")
-        if not isinstance(cursum_items, list):
-            log.error("fetch_curriculum: cursum no devolvió lista, tipo=%s contenido=%r",
-                      type(cursum_items).__name__, str(cursum_items)[:200])
+        cursum_items = self._fetch_cursum_items()
+        if not cursum_items:
             return []
-        log.info("fetch_curriculum: cursum devolvió %d materias",
-                 len(cursum_items))
 
         cursum_codes = {str(item["materia"]) for item in cursum_items}
         name_to_code = {self._normalize_name(item["nombreMateria"]): str(
@@ -404,24 +436,9 @@ class PortalScraper(Authenticator, CurriculumFetcher, AcademicHistoryFetcher):
         subjects: list[Subject] = []
         for item in cursum_items:
             code = str(item["materia"])
-            reqs = item.get("requisitos", [])
             is_cursada = code in passed or code in homologation
             nota = passed.get(code) or homologation.get(code)
-            subjects.append(Subject(
-                code=code,
-                name=item["nombreMateria"],
-                credits=item["creditos"],
-                semester=item["nivel"],
-                obligatoria=item.get(
-                    "tipoMateria", "OBLIGATORIA") == "OBLIGATORIA",
-                elective_bank=item.get("nombreBancoElectiva", "").strip() or None,
-                prerequisites=[str(r["materiaRequisito"])
-                               for r in reqs if r["tipoRequisito"] == "PRERREQ"],
-                corequisites=[str(r["materiaRequisito"])
-                              for r in reqs if r["tipoRequisito"] == "CORREQ"],
-                cursada=is_cursada,
-                nota=nota,
-                cursando=code in current,
-            ))
+            subjects.append(self._build_subject(
+                item, is_cursada, nota, code in current))
 
         return subjects
