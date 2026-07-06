@@ -1,0 +1,3 @@
+# Dependencias solo para desarrollo/testing (no se instalan en producción).
+-r requirements.txt
+pytest>=8.0.0
