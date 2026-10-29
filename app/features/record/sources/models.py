@@ -11,6 +11,13 @@ class StudentInfo(_Frozen):
     program_code: str
 
 
+class EnrolledSubject(_Frozen):
+    """Materia de "MATERIAS MATRICULADAS" en la constancia. El nombre puede faltar."""
+
+    code: str
+    name: str | None
+
+
 class ProgramOption(_Frozen):
     """Opción del selector de programas y el formulario que hay que enviar."""
 

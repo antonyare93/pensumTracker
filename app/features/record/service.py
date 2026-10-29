@@ -10,9 +10,9 @@ from app.features.record.domain.credits import resolve_total_credits
 from app.features.record.domain.grades import PassedSubject, merge_passed, passed_subject
 from app.features.record.domain.homologation import homologate
 from app.features.record.domain.record import build_record
-from app.features.record.schemas import AcademicRecord, Subject
+from app.features.record.schemas import AcademicRecord, EnrolledOutsidePensum, Subject
 from app.features.record.sources.gateway import PortalRecordSource, RecordSource
-from app.features.record.sources.models import CursumSubject, StudentInfo
+from app.features.record.sources.models import CursumSubject, EnrolledSubject, StudentInfo
 from app.portal.session import PortalSession
 
 log = logging.getLogger(__name__)
@@ -51,6 +51,16 @@ def merge_curriculum(
         nota = (passed[code].grade if code in passed else None) or homologation.get(code)
         subjects.append(_subject(item, cursada, nota, code in current))
     return subjects
+
+
+def enrolled_outside_pensum(
+    current: Sequence[EnrolledSubject], items: Sequence[CursumSubject]
+) -> list[EnrolledOutsidePensum]:
+    """Matriculadas que no están en el pensum: sin esto se perdían sin rastro."""
+    in_pensum = {item.code for item in items}
+    return [
+        EnrolledOutsidePensum(code=s.code, name=s.name) for s in current if s.code not in in_pensum
+    ]
 
 
 @dataclass(frozen=True)
@@ -106,7 +116,7 @@ class RecordStage:
         items = source.curriculum(student.program_code, program.pensum_version)
         yield _pensum_event(merge_curriculum(items, {}, ()))
 
-        subjects = _curriculum(source, student.program_code, program.pensum_version)
+        subjects, outside = _curriculum(source, student.program_code, program.pensum_version)
         yield _pensum_event(subjects)
 
         official = source.official_pensum()
@@ -120,7 +130,7 @@ class RecordStage:
         if total_credits != program.catalog_total:
             yield program.info(total_credits)
 
-        record = _record(student, program, total_credits, subjects, bank_requirements)
+        record = _record(student, program, total_credits, subjects, bank_requirements, outside)
         ctx.results["record"] = record
         yield {"stage": "record", "data": record.model_dump()}
 
@@ -176,23 +186,29 @@ def _assigned_version(source: RecordSource, program_code: str) -> tuple[int | No
     return None, enrolled
 
 
-def _curriculum(source: RecordSource, program_code: str, pensum_version: int) -> list[Subject]:
+def _curriculum(
+    source: RecordSource, program_code: str, pensum_version: int
+) -> tuple[list[Subject], list[EnrolledOutsidePensum]]:
     passed = _passed(source, program_code)
-    current = set(source.current_subject_codes())
+    enrolled = source.current_subjects()
+    current = {s.code for s in enrolled}
     log.info(
         "record: cursando=%d | program_code=%s pensum_version=%d",
         len(current),
         program_code,
         pensum_version,
     )
-    subjects = merge_curriculum(source.curriculum(program_code, pensum_version), passed, current)
+    items = source.curriculum(program_code, pensum_version)
+    subjects = merge_curriculum(items, passed, current)
+    outside = enrolled_outside_pensum(enrolled, items)
     log.info(
-        "record: curriculum | total=%d cursadas=%d cursando=%d",
+        "record: curriculum | total=%d cursadas=%d cursando=%d fuera_del_pensum=%d",
         len(subjects),
         sum(1 for s in subjects if s.cursada),
         sum(1 for s in subjects if s.cursando),
+        len(outside),
     )
-    return subjects
+    return subjects, outside
 
 
 def _passed(source: RecordSource, program_code: str) -> dict[str, PassedSubject]:
@@ -217,6 +233,7 @@ def _record(
     total_credits: int,
     subjects: list[Subject],
     bank_requirements: dict[str, int],
+    outside: list[EnrolledOutsidePensum],
 ) -> AcademicRecord:
     record = build_record(
         student_name=student.student_name,
@@ -229,6 +246,7 @@ def _record(
         total_credits=total_credits,
         subjects=subjects,
         bank_requirements=bank_requirements,
+        enrolled_outside_pensum=outside,
     )
     log.info(
         "record: expediente construido | credits=%d/%d en_curso=%d",

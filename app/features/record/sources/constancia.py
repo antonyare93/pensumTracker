@@ -5,7 +5,7 @@ import re
 
 from bs4 import BeautifulSoup, Tag
 
-from app.features.record.sources.models import StudentInfo
+from app.features.record.sources.models import EnrolledSubject, StudentInfo
 
 log = logging.getLogger(__name__)
 
@@ -29,16 +29,22 @@ def parse_student_info(html: str) -> StudentInfo:
     )
 
 
-def parse_current_subjects(html: str) -> list[str]:
+def parse_current_subjects(html: str) -> list[EnrolledSubject]:
     soup = BeautifulSoup(html, "lxml")
     h5 = soup.find("h5", string=re.compile(r"MATERIAS MATRICULADAS", re.IGNORECASE))
     if not isinstance(h5, Tag):
         log.warning("parse_current_subjects: no se encontró h5 'MATERIAS MATRICULADAS'")
         return []
-    codes: list[str] = []
+    subjects: list[EnrolledSubject] = []
     for div in h5.find_all_next("div", class_="alert-success"):
-        code_m = re.search(r"CÓDIGO\s*[:\-]?\s*(\d+)", div.get_text(), re.IGNORECASE)
+        # El nombre es lo que sigue al código en la misma línea.
+        code_m = re.search(r"CÓDIGO\s*[:\-]?\s*(\d+)[ \t]*([^\n]*)", div.get_text(), re.IGNORECASE)
         if code_m:
-            codes.append(code_m.group(1))
-    log.info("parse_current_subjects: %d materias en curso", len(codes))
-    return codes
+            name = code_m.group(2).strip() or None
+            subjects.append(EnrolledSubject(code=code_m.group(1), name=name))
+    log.info(
+        "parse_current_subjects: %d materias en curso, %d sin nombre",
+        len(subjects),
+        sum(1 for s in subjects if s.name is None),
+    )
+    return subjects

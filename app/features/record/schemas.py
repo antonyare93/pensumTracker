@@ -16,6 +16,13 @@ class Subject(BaseModel):
     status: str = "locked"
 
 
+class EnrolledOutsidePensum(BaseModel):
+    """Materia matriculada que no está en el pensum de la versión elegida."""
+
+    code: str
+    name: str | None
+
+
 class ElectiveBank(BaseModel):
     name: str
     # None cuando el pensum oficial no dio el mínimo del banco para esta versión.
@@ -41,3 +48,5 @@ class AcademicRecord(BaseModel):
     graduated: bool = False  # True si ya cumplió todos los créditos del grado
     subjects: list[Subject]
     elective_banks: list[ElectiveBank] = []
+    # Matriculadas que el pensum no trae: otra versión, otro programa o fuera del catálogo.
+    enrolled_outside_pensum: list[EnrolledOutsidePensum] = []

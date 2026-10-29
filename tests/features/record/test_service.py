@@ -14,10 +14,10 @@ from pydantic import SecretStr
 from app.core.stream import StreamContext
 from app.features.record.domain.grades import PassedSubject
 from app.features.record.schemas import AcademicRecord, Subject
-from app.features.record.service import RecordStage, merge_curriculum
+from app.features.record.service import RecordStage, enrolled_outside_pensum, merge_curriculum
 from app.features.record.sources.cursum import parse_curriculum
 from app.features.record.sources.gateway import PortalRecordSource, RecordSource
-from app.features.record.sources.models import CursumSubject
+from app.features.record.sources.models import CursumSubject, EnrolledSubject
 from app.portal.credentials import LoginPerRequest, PortalCredentials
 from app.portal.session import PortalSession
 from tests.fakes.portal import FakePortal
@@ -111,6 +111,28 @@ def test_cursando_marca_las_materias_matriculadas():
     assert materias["2517450"].cursando is False
 
 
+def test_matriculadas_fuera_del_pensum_se_devuelven_aparte():
+    current = [
+        EnrolledSubject(code="2508101", name="PROGRAMACIÓN I"),
+        EnrolledSubject(code="3001234", name="CURSO DE OTRO PROGRAMA"),
+        EnrolledSubject(code="3009999", name=None),
+    ]
+    outside = enrolled_outside_pensum(current, PENSUM_V5)
+    assert [(s.code, s.name) for s in outside] == [
+        ("3001234", "CURSO DE OTRO PROGRAMA"),
+        ("3009999", None),
+    ]
+
+
+def test_record_stage_manda_las_matriculadas_fuera_del_pensum(session: PortalSession):
+    ctx = StreamContext(session, 0)
+    list(RecordStage().run(ctx))
+    record = ctx.results["record"]
+    assert isinstance(record, AcademicRecord)
+    # La única matriculada de la fixture (2000300) está en el pensum 506.
+    assert record.enrolled_outside_pensum == []
+
+
 def test_sin_materias_en_el_pensum_devuelve_lista_vacia():
     passed = _passed(PassedSubject("2508101", "PROGRAMACIÓN I", 4.0))
     assert merge_curriculum([], passed, {"2508101"}) == []
@@ -188,3 +210,21 @@ def test_version_pedida_con_varios_programas_no_fija_la_matriculada(
     record = ctx.results["record"]
     assert isinstance(record, AcademicRecord)
     assert record.enrolled_version is None
+
+
+class _ConMatriculaExtra(PortalRecordSource):
+    """Portal falso con una matriculada más, que no está en el pensum 506."""
+
+    def current_subjects(self) -> list[EnrolledSubject]:
+        return [*super().current_subjects(), EnrolledSubject(code="3001234", name="CURSO LIBRE")]
+
+
+def test_record_stage_no_pierde_la_matriculada_fuera_del_pensum(session: PortalSession):
+    ctx = StreamContext(session, 0)
+    list(RecordStage(source_factory=_ConMatriculaExtra).run(ctx))
+    record = ctx.results["record"]
+    assert isinstance(record, AcademicRecord)
+    assert [(s.code, s.name) for s in record.enrolled_outside_pensum] == [
+        ("3001234", "CURSO LIBRE")
+    ]
+    assert [s.code for s in record.subjects if s.cursando] == ["2000300"]

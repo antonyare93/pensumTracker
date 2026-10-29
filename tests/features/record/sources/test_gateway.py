@@ -40,7 +40,7 @@ def _source(with_credentials: bool = False) -> PortalRecordSource:
 def test_constancia_se_pide_una_vez(fake_portal: FakePortal) -> None:
     source = _source()
     info = source.student_info()
-    codes = source.current_subject_codes()
+    codes = source.current_subjects()
     assert info.program_code == "506"
     assert codes
     assert _calls(fake_portal, f"{CONSTANCIA}?app=consultar") == 1

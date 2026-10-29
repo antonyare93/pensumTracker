@@ -12,6 +12,7 @@ from app.features.record.sources import constancia, cursum, historia, pensum_ofi
 from app.features.record.sources.models import (
     CursumProgram,
     CursumSubject,
+    EnrolledSubject,
     GradeRow,
     HistoriaPage,
     OfficialPensum,
@@ -29,7 +30,7 @@ _RELOGIN = "php_relogin"
 class RecordSource(Protocol):
     def student_info(self) -> StudentInfo: ...
 
-    def current_subject_codes(self) -> list[str]: ...
+    def current_subjects(self) -> list[EnrolledSubject]: ...
 
     def historia(self, program_code: str) -> HistoriaPage: ...
 
@@ -81,7 +82,7 @@ class PortalRecordSource:
     def student_info(self) -> StudentInfo:
         return constancia.parse_student_info(self._constancia())
 
-    def current_subject_codes(self) -> list[str]:
+    def current_subjects(self) -> list[EnrolledSubject]:
         return constancia.parse_current_subjects(self._constancia())
 
     def historia(self, program_code: str) -> HistoriaPage:

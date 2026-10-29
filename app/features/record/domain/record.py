@@ -3,7 +3,12 @@
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 
-from app.features.record.schemas import AcademicRecord, ElectiveBank, Subject
+from app.features.record.schemas import (
+    AcademicRecord,
+    ElectiveBank,
+    EnrolledOutsidePensum,
+    Subject,
+)
 
 
 def bank_progress(subjects: Sequence[Subject]) -> dict[str, int]:
@@ -102,6 +107,7 @@ def build_record(
     subjects: list[Subject],
     bank_requirements: Mapping[str, int] | None = None,
     enrolled_version: int | None = None,
+    enrolled_outside_pensum: Sequence[EnrolledOutsidePensum] = (),
 ) -> AcademicRecord:
     """Expediente con progreso, estados y bancos a partir de las materias."""
     unlocked = {s.code for s in subjects if s.cursada or s.cursando}
@@ -158,4 +164,5 @@ def build_record(
         graduated=graduated,
         subjects=enriched,
         elective_banks=elective_banks(enriched, requirements),
+        enrolled_outside_pensum=list(enrolled_outside_pensum),
     )

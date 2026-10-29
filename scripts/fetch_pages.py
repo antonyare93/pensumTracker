@@ -66,8 +66,8 @@ def show_constancia(source: PortalRecordSource) -> None:
     print(f"  Código    : {student.program_code!r}")
 
     print()
-    print("  — current_subject_codes() —")
-    codes = source.current_subject_codes()
+    print("  — current_subjects() —")
+    codes = [s.code for s in source.current_subjects()]
     print(f"  Códigos   : {codes}")
 
 
@@ -117,7 +117,7 @@ def show_curriculum(source: PortalRecordSource, passed: dict[str, PassedSubject]
     )
 
     items = source.curriculum(program_code, pensum_v)
-    current = set(source.current_subject_codes())
+    current = {s.code for s in source.current_subjects()}
     subjects = merge_curriculum(items, passed, current)
     print(f"  Total materias: {len(subjects)}")
 
