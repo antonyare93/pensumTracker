@@ -8,7 +8,11 @@ from typing import cast
 from app.core.stream import Event, StreamContext
 from app.features.record.domain.credits import resolve_total_credits
 from app.features.record.domain.grades import PassedSubject, merge_passed, passed_subject
-from app.features.record.domain.homologation import homologate, normalize_name
+from app.features.record.domain.homologation import (
+    homologate,
+    normalize_name,
+    restore_full_names,
+)
 from app.features.record.domain.record import build_record
 from app.features.record.schemas import AcademicRecord, EnrolledOutsidePensum, Subject
 from app.features.record.sources.gateway import PortalRecordSource, RecordSource
@@ -116,7 +120,9 @@ class RecordStage:
         items = source.curriculum(student.program_code, program.pensum_version)
         yield _pensum_event(merge_curriculum(items, {}, ()))
 
-        subjects, outside = _curriculum(source, student.program_code, program.pensum_version)
+        subjects, outside = _curriculum(
+            source, student.program_code, program.pensum_version, program.versiones
+        )
         yield _pensum_event(subjects)
 
         official = source.official_pensum()
@@ -187,7 +193,10 @@ def _assigned_version(source: RecordSource, program_code: str) -> tuple[int | No
 
 
 def _curriculum(
-    source: RecordSource, program_code: str, pensum_version: int
+    source: RecordSource,
+    program_code: str,
+    pensum_version: int,
+    versiones: Sequence[int] = (),
 ) -> tuple[list[Subject], list[EnrolledOutsidePensum]]:
     passed = _passed(source, program_code)
     enrolled = source.current_subjects()
@@ -199,6 +208,7 @@ def _curriculum(
         pensum_version,
     )
     items = source.curriculum(program_code, pensum_version)
+    passed = _with_full_names(source, program_code, pensum_version, versiones, passed, items)
     subjects = merge_curriculum(items, passed, current)
     outside = enrolled_outside_pensum(enrolled, items)
     log.info(
@@ -247,6 +257,35 @@ def _log_credit_sources(subjects: Sequence[Subject], passed: Mapping[str, Passed
                 s.name,
                 normalize_name(s.name),
             )
+
+
+def _with_full_names(
+    source: RecordSource,
+    program_code: str,
+    pensum_version: int,
+    versiones: Sequence[int],
+    passed: dict[str, PassedSubject],
+    items: Sequence[CursumSubject],
+) -> dict[str, PassedSubject]:
+    """La historia corta los nombres; los de otras versiones del catálogo los completan.
+
+    Solo hace falta para aprobadas cuyo código no está en la versión elegida, que
+    son las que se homologan por nombre."""
+    in_pensum = {item.code for item in items}
+    if all(code in in_pensum for code in passed):
+        return passed
+    catalogs: list[dict[str, str]] = []
+    for version in sorted(set(versiones) - {pensum_version}, reverse=True):
+        try:
+            other = source.curriculum(program_code, version)
+        except Exception:
+            log.warning("record: no se pudo leer el catálogo v%d para nombres completos", version)
+            continue
+        catalogs.append({item.code: item.name for item in other})
+    restored = restore_full_names(passed, catalogs)
+    changed = sum(1 for code in passed if restored[code].name != passed[code].name)
+    log.info("record: nombres_completos | restaurados=%d versiones=%d", changed, len(catalogs))
+    return restored
 
 
 def _passed(source: RecordSource, program_code: str) -> dict[str, PassedSubject]:

@@ -3,7 +3,8 @@
 import logging
 import re
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from dataclasses import replace
 from typing import Final
 
 from app.features.record.domain.grades import PassedSubject
@@ -97,3 +98,22 @@ def homologate(
             log.info("fetch_curriculum: homologación %s→%s (%s)", old_code, new_code, subject.name)
             homologation[new_code] = subject.grade
     return homologation
+
+
+def restore_full_names(
+    passed: Mapping[str, PassedSubject], catalogs: Iterable[Mapping[str, str]]
+) -> dict[str, PassedSubject]:
+    """Cambia el nombre que la historia corta a 25 caracteres por el del catálogo.
+
+    "FORMACIÓN CIUDAD Y CONSTI" no se parece a ningún nombre de otra versión;
+    con el nombre completo del catálogo donde está su código sí se homologa.
+    `catalogs` son código → nombre de otras versiones; gana el primero que tenga
+    el código."""
+    full: dict[str, str] = {}
+    for catalog in catalogs:
+        for code, name in catalog.items():
+            full.setdefault(code, name)
+    return {
+        code: replace(subject, name=full[code]) if code in full else subject
+        for code, subject in passed.items()
+    }
