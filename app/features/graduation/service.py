@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from app.core.config import get_settings
 from app.core.stream import Event, StreamContext
+from app.features.graduation.diagnostics import bank_diagnostics
 from app.features.graduation.parser import parse_missing
 from app.features.record.schemas import AcademicRecord
 from app.features.record.sources.historia import parse_program_selector
@@ -60,4 +61,8 @@ class MissingStage:
             len(missing.banks),
             len(missing.pending),
         )
+        try:
+            log.info("diagnostico: %s", bank_diagnostics(record, missing))
+        except Exception:  # el diagnóstico no debe cortar la etapa
+            log.warning("diagnostico: no se pudo armar la línea", exc_info=True)
         yield {"stage": "missing", "data": missing.model_dump()}
