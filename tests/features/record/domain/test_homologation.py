@@ -1,7 +1,7 @@
 import pytest
 
 from app.features.record.domain.grades import PassedSubject
-from app.features.record.domain.homologation import homologate, normalize_name
+from app.features.record.domain.homologation import homologate, normalize_name, restore_full_names
 
 
 def _p(code, name, grade=None):
@@ -104,3 +104,40 @@ def test_variantes_de_redaccion_dan_la_misma_clave(a, b):
 )
 def test_materias_distintas_no_colapsan(a, b):
     assert normalize_name(a) != normalize_name(b)
+
+
+def test_restaura_el_nombre_completo_que_la_historia_corta():
+
+    passed = {
+        "2566350": PassedSubject(code="2566350", name="FORMACIÓN CIUDAD Y CONSTI", grade=4.0),
+        "9999999": PassedSubject(code="9999999", name="SIN CATALOGO", grade=3.5),
+    }
+    viejo = {"2566350": "FORMACIÓN CIUDADANA Y CONSTITUCIONAL"}
+
+    restored = restore_full_names(passed, [viejo])
+
+    assert restored["2566350"].name == "FORMACIÓN CIUDADANA Y CONSTITUCIONAL"
+    assert restored["2566350"].grade == 4.0
+    assert restored["9999999"].name == "SIN CATALOGO"
+
+
+def test_con_nombre_completo_homologa_formacion_ciudadana_a_la_v5():
+
+    passed = {"2566350": PassedSubject(code="2566350", name="FORMACIÓN CIUDAD Y CONSTI", grade=4.0)}
+    v3 = {"2566350": "FORMACIÓN CIUDADANA Y CONSTITUCIONAL"}
+    v5 = {"2517450": "CÁTEDRA DE FORMACIÓN CIUDADANA Y CONSTITUCIONAL"}
+
+    assert homologate(passed, v5) == {}
+    assert homologate(restore_full_names(passed, [v3]), v5) == {"2517450": 4.0}
+
+
+@pytest.mark.parametrize(
+    ("v3", "v5"),
+    [
+        ("ARQUITECTURA DE  COMPUTADORES Y LABORATO", "ARQUITECTURA DE COMPUTADORES Y LABORATORIO"),
+        ("PROY INTEGRADOR II AREA ELECTIVA", "PROYECTO INTEGRADOR II - ÁREA ELECTIVA"),
+    ],
+)
+def test_equivalencias_506_v3_a_v5(v3, v5):
+    passed = {"OLD": PassedSubject(code="OLD", name=v3, grade=4.0)}
+    assert homologate(passed, {"NEW": v5}) == {"NEW": 4.0}

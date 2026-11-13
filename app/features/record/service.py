@@ -8,7 +8,11 @@ from typing import cast
 from app.core.stream import Event, StreamContext
 from app.features.record.domain.credits import resolve_total_credits
 from app.features.record.domain.grades import PassedSubject, merge_passed, passed_subject
-from app.features.record.domain.homologation import homologate
+from app.features.record.domain.homologation import (
+    homologate,
+    normalize_name,
+    restore_full_names,
+)
 from app.features.record.domain.record import build_record
 from app.features.record.schemas import AcademicRecord, EnrolledOutsidePensum, Subject
 from app.features.record.sources.gateway import PortalRecordSource, RecordSource
@@ -116,7 +120,9 @@ class RecordStage:
         items = source.curriculum(student.program_code, program.pensum_version)
         yield _pensum_event(merge_curriculum(items, {}, ()))
 
-        subjects, outside = _curriculum(source, student.program_code, program.pensum_version)
+        subjects, outside = _curriculum(
+            source, student.program_code, program.pensum_version, program.versiones
+        )
         yield _pensum_event(subjects)
 
         official = source.official_pensum()
@@ -187,7 +193,10 @@ def _assigned_version(source: RecordSource, program_code: str) -> tuple[int | No
 
 
 def _curriculum(
-    source: RecordSource, program_code: str, pensum_version: int
+    source: RecordSource,
+    program_code: str,
+    pensum_version: int,
+    versiones: Sequence[int] = (),
 ) -> tuple[list[Subject], list[EnrolledOutsidePensum]]:
     passed = _passed(source, program_code)
     enrolled = source.current_subjects()
@@ -199,6 +208,7 @@ def _curriculum(
         pensum_version,
     )
     items = source.curriculum(program_code, pensum_version)
+    passed = _with_full_names(source, program_code, pensum_version, versiones, passed, items)
     subjects = merge_curriculum(items, passed, current)
     outside = enrolled_outside_pensum(enrolled, items)
     log.info(
@@ -208,7 +218,76 @@ def _curriculum(
         sum(1 for s in subjects if s.cursando),
         len(outside),
     )
+    _log_credit_sources(subjects, passed)
     return subjects, outside
+
+
+def _log_credit_sources(subjects: Sequence[Subject], passed: Mapping[str, PassedSubject]) -> None:
+    """Diagnóstico de créditos cursados (DEBUG: solo para pruebas locales con LOG_LEVEL=DEBUG): cuánto viene directo y cuánto por homologación.
+
+    Solo códigos y créditos, nada que identifique al estudiante."""
+    cursadas = [s for s in subjects if s.cursada]
+    direct = [s for s in cursadas if s.code in passed]
+    homologated = [s for s in cursadas if s.code not in passed]
+    log.debug(
+        "record: creditos_cursados | directos=%d (%d materias) homologados=%d (%d materias) "
+        "aprobadas_historia=%d (%d créditos en el catálogo)",
+        sum(s.credits for s in direct),
+        len(direct),
+        sum(s.credits for s in homologated),
+        len(homologated),
+        len(passed),
+        sum(s.credits for s in subjects),
+    )
+    for s in homologated:
+        log.debug(
+            "record: homologada | %s %dcr banco=%s", s.code, s.credits, s.elective_bank or "-"
+        )
+    # Nombres de materia, no del estudiante: sirven para ver por qué una
+    # homologación por nombre no se dio (p.ej. Formación Ciudadana en v5).
+    in_pensum = {s.code for s in subjects}
+    unmatched = sorted(code for code in passed if code not in in_pensum)
+    log.debug("record: aprobadas_sin_par_en_el_pensum=%d", len(unmatched))
+    for code in unmatched:
+        name = passed[code].name
+        log.debug("record: sin_par | %s %r normalizado=%r", code, name, normalize_name(name))
+    for s in subjects:
+        if s.obligatoria and not s.cursada and not s.cursando:
+            log.debug(
+                "record: pensum_sin_cursar | %s %r normalizado=%r",
+                s.code,
+                s.name,
+                normalize_name(s.name),
+            )
+
+
+def _with_full_names(
+    source: RecordSource,
+    program_code: str,
+    pensum_version: int,
+    versiones: Sequence[int],
+    passed: dict[str, PassedSubject],
+    items: Sequence[CursumSubject],
+) -> dict[str, PassedSubject]:
+    """La historia corta los nombres; los de otras versiones del catálogo los completan.
+
+    Solo hace falta para aprobadas cuyo código no está en la versión elegida, que
+    son las que se homologan por nombre."""
+    in_pensum = {item.code for item in items}
+    if all(code in in_pensum for code in passed):
+        return passed
+    catalogs: list[dict[str, str]] = []
+    for version in sorted(set(versiones) - {pensum_version}, reverse=True):
+        try:
+            other = source.curriculum(program_code, version)
+        except Exception:
+            log.warning("record: no se pudo leer el catálogo v%d para nombres completos", version)
+            continue
+        catalogs.append({item.code: item.name for item in other})
+    restored = restore_full_names(passed, catalogs)
+    changed = sum(1 for code in passed if restored[code].name != passed[code].name)
+    log.debug("record: nombres_completos | restaurados=%d versiones=%d", changed, len(catalogs))
+    return restored
 
 
 def _passed(source: RecordSource, program_code: str) -> dict[str, PassedSubject]:
