@@ -8,7 +8,7 @@ from typing import cast
 from app.core.stream import Event, StreamContext
 from app.features.record.domain.credits import resolve_total_credits
 from app.features.record.domain.grades import PassedSubject, merge_passed, passed_subject
-from app.features.record.domain.homologation import homologate
+from app.features.record.domain.homologation import homologate, normalize_name
 from app.features.record.domain.record import build_record
 from app.features.record.schemas import AcademicRecord, EnrolledOutsidePensum, Subject
 from app.features.record.sources.gateway import PortalRecordSource, RecordSource
@@ -231,8 +231,22 @@ def _log_credit_sources(subjects: Sequence[Subject], passed: Mapping[str, Passed
     )
     for s in homologated:
         log.info("record: homologada | %s %dcr banco=%s", s.code, s.credits, s.elective_bank or "-")
-    unmatched = sorted(code for code in passed if code not in {s.code for s in subjects})
-    log.info("record: aprobadas_sin_par_en_el_pensum=%d %s", len(unmatched), unmatched)
+    # Nombres de materia, no del estudiante: sirven para ver por qué una
+    # homologación por nombre no se dio (p.ej. Formación Ciudadana en v5).
+    in_pensum = {s.code for s in subjects}
+    unmatched = sorted(code for code in passed if code not in in_pensum)
+    log.info("record: aprobadas_sin_par_en_el_pensum=%d", len(unmatched))
+    for code in unmatched:
+        name = passed[code].name
+        log.info("record: sin_par | %s %r normalizado=%r", code, name, normalize_name(name))
+    for s in subjects:
+        if s.obligatoria and not s.cursada and not s.cursando:
+            log.info(
+                "record: pensum_sin_cursar | %s %r normalizado=%r",
+                s.code,
+                s.name,
+                normalize_name(s.name),
+            )
 
 
 def _passed(source: RecordSource, program_code: str) -> dict[str, PassedSubject]:
