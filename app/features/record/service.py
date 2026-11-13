@@ -223,13 +223,13 @@ def _curriculum(
 
 
 def _log_credit_sources(subjects: Sequence[Subject], passed: Mapping[str, PassedSubject]) -> None:
-    """Diagnóstico de créditos cursados: cuánto viene directo y cuánto por homologación.
+    """Diagnóstico de créditos cursados (DEBUG: solo para pruebas locales con LOG_LEVEL=DEBUG): cuánto viene directo y cuánto por homologación.
 
     Solo códigos y créditos, nada que identifique al estudiante."""
     cursadas = [s for s in subjects if s.cursada]
     direct = [s for s in cursadas if s.code in passed]
     homologated = [s for s in cursadas if s.code not in passed]
-    log.info(
+    log.debug(
         "record: creditos_cursados | directos=%d (%d materias) homologados=%d (%d materias) "
         "aprobadas_historia=%d (%d créditos en el catálogo)",
         sum(s.credits for s in direct),
@@ -240,18 +240,20 @@ def _log_credit_sources(subjects: Sequence[Subject], passed: Mapping[str, Passed
         sum(s.credits for s in subjects),
     )
     for s in homologated:
-        log.info("record: homologada | %s %dcr banco=%s", s.code, s.credits, s.elective_bank or "-")
+        log.debug(
+            "record: homologada | %s %dcr banco=%s", s.code, s.credits, s.elective_bank or "-"
+        )
     # Nombres de materia, no del estudiante: sirven para ver por qué una
     # homologación por nombre no se dio (p.ej. Formación Ciudadana en v5).
     in_pensum = {s.code for s in subjects}
     unmatched = sorted(code for code in passed if code not in in_pensum)
-    log.info("record: aprobadas_sin_par_en_el_pensum=%d", len(unmatched))
+    log.debug("record: aprobadas_sin_par_en_el_pensum=%d", len(unmatched))
     for code in unmatched:
         name = passed[code].name
-        log.info("record: sin_par | %s %r normalizado=%r", code, name, normalize_name(name))
+        log.debug("record: sin_par | %s %r normalizado=%r", code, name, normalize_name(name))
     for s in subjects:
         if s.obligatoria and not s.cursada and not s.cursando:
-            log.info(
+            log.debug(
                 "record: pensum_sin_cursar | %s %r normalizado=%r",
                 s.code,
                 s.name,
@@ -284,7 +286,7 @@ def _with_full_names(
         catalogs.append({item.code: item.name for item in other})
     restored = restore_full_names(passed, catalogs)
     changed = sum(1 for code in passed if restored[code].name != passed[code].name)
-    log.info("record: nombres_completos | restaurados=%d versiones=%d", changed, len(catalogs))
+    log.debug("record: nombres_completos | restaurados=%d versiones=%d", changed, len(catalogs))
     return restored
 
 
