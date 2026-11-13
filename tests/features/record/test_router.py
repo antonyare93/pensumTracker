@@ -62,7 +62,7 @@ def test_stream_completo_termina_en_record_y_cierra_la_sesion(
 ):
     with TestClient(app) as client:
         response = client.post(URL, json=BODY)
-    assert _stages(response.text)[-2:] == ["record", "grades"]
+    assert _stages(response.text)[-3:] == ["record", "grades", "missing"]
     (session,) = provider.sessions
     assert session.closed is True
     assert session.credentials is None
@@ -97,7 +97,7 @@ def test_reauth_tardio_usa_la_clave_de_la_sesion(fake_portal: FakePortal):
     fake_portal._add("GET", pensum, callback=callback, content_type="text/html; charset=utf-8")
     with TestClient(app) as client:
         response = client.post(URL, json=BODY)
-    assert _stages(response.text)[-2:] == ["record", "grades"]
+    assert _stages(response.text)[-3:] == ["record", "grades", "missing"]
     validar = [
         c for c in fake_portal.rsps.calls if c.request.url == validar_url("ayudame2.udea.edu.co")
     ]
