@@ -17,14 +17,15 @@ def resolve_total_credits(
 ) -> tuple[int, dict[str, int]]:
     """Total de grado acorde a la versión del pensum efectiva.
 
-    Si el pensum oficial (misma versión) trae mínimos por banco:
-        total = obligatorias + suma(mínimos por banco)
-    Si no, cae a creditosGrado del catálogo Cursum.
+    El total es creditosGrado del catálogo Cursum. Los mínimos por banco del
+    pensum oficial (misma versión) solo se devuelven para los bancos: sumarlos a
+    las obligatorias no da el plan (506 v3: 145 + 75 = 220, el plan es 168).
+    Solo si Cursum no trae total se usa esa suma.
     """
     oblig = sum(s.credits for s in subjects if s.obligatoria)
 
     if bank_minimums and official_version == effective_version:
-        total = oblig + sum(bank_minimums.values())
+        total = catalog_total or oblig + sum(bank_minimums.values())
         log.info(
             "resolve_total_credits: versión=%d oblig=%d electivas_min=%d -> %d "
             "(catálogo cursum=%d)",

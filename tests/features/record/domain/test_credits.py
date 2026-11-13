@@ -8,9 +8,15 @@ SUBJECTS = [
 ]
 
 
-def test_version_oficial_igual_suma_obligatorias_y_minimos():
+def test_con_minimos_oficiales_el_total_sigue_siendo_el_del_catalogo():
+    # Programa 506 v3: obligatorias 145 + mínimos 75 = 220, pero el plan es de 168.
     total, banks = resolve_total_credits(200, SUBJECTS, 5, {"B": 4, "C": 3}, 5)
-    assert (total, banks) == (25, {"B": 4, "C": 3})
+    assert (total, banks) == (200, {"B": 4, "C": 3})
+
+
+def test_sin_total_de_catalogo_suma_obligatorias_y_minimos():
+    total, _ = resolve_total_credits(0, SUBJECTS, 5, {"B": 4, "C": 3}, 5)
+    assert total == 25
 
 
 def test_devuelve_copia_de_los_minimos():
