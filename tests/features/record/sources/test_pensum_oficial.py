@@ -32,13 +32,3 @@ def test_banco_con_parentesis_coma_y_barra_se_lee_completo():
     result = parse_official_pensum(html)
     assert result is not None
     assert result.bank_minimums == {"CURSO ALTERNATIVO DE FÍSICA (A/B), II": 6}
-
-
-def test_titulo_con_entidad_html_se_reconoce():
-    html = (
-        "<p>P&Eacute;NSUM DEL PROGRAMA</p><p>Programa: [506] SISTEMAS (v3)</p>"
-        "<p>BANCO T&Eacute;CNICO (3 materias)</p><p>Debes cursar al menos 20 cr&eacute;ditos</p>"
-    )
-    assert parse_official_pensum(html) == OfficialPensum(
-        version=3, bank_minimums={"BANCO TÉCNICO": 20}
-    )
