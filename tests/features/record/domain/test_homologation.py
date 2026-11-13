@@ -129,3 +129,15 @@ def test_con_nombre_completo_homologa_formacion_ciudadana_a_la_v5():
 
     assert homologate(passed, v5) == {}
     assert homologate(restore_full_names(passed, [v3]), v5) == {"2517450": 4.0}
+
+
+@pytest.mark.parametrize(
+    ("v3", "v5"),
+    [
+        ("ARQUITECTURA DE  COMPUTADORES Y LABORATO", "ARQUITECTURA DE COMPUTADORES Y LABORATORIO"),
+        ("PROY INTEGRADOR II AREA ELECTIVA", "PROYECTO INTEGRADOR II - ÁREA ELECTIVA"),
+    ],
+)
+def test_equivalencias_506_v3_a_v5(v3, v5):
+    passed = {"OLD": PassedSubject(code="OLD", name=v3, grade=4.0)}
+    assert homologate(passed, {"NEW": v5}) == {"NEW": 4.0}
