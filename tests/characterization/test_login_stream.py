@@ -28,7 +28,9 @@ PortalFactory = Callable[..., FakePortal]
 
 
 def _events(text: str) -> list[dict]:
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
+    """Eventos del expediente. La etapa grades va después y tiene sus propias pruebas."""
+    events = [json.loads(line) for line in text.splitlines() if line.strip()]
+    return [e for e in events if e["stage"] != "grades"]
 
 
 def _stages(events: list[dict]) -> list[str]:

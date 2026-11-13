@@ -26,6 +26,7 @@ SSO = f"{AYUDAME2}/php_mua_externos/"
 HISTORIA = f"{TSONE}/php_historia_estudiante/"
 CONSTANCIA = f"{TSONE}/php_constancia_estudiante/"
 PENSUM = f"{AYUDAME2}/php_pensum_estudiante/"
+NOTAS = f"{TSONE}/php_notas_estudiante/"
 SELECTOR = (
     f"{TSONE}/php_programas_estudiante/"
     "?app=listar"
@@ -222,6 +223,7 @@ class FakePortal:
                 match=tsone_cookie,
             )
         self._html("GET", f"{PENSUM}?app=consultar", "pensum_oficial.html")
+        self._html("GET", f"{NOTAS}?app=consultar", "notas_semestre.html")
 
         self._add(
             "GET",
