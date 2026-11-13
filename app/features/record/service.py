@@ -208,7 +208,31 @@ def _curriculum(
         sum(1 for s in subjects if s.cursando),
         len(outside),
     )
+    _log_credit_sources(subjects, passed)
     return subjects, outside
+
+
+def _log_credit_sources(subjects: Sequence[Subject], passed: Mapping[str, PassedSubject]) -> None:
+    """Diagnóstico de créditos cursados: cuánto viene directo y cuánto por homologación.
+
+    Solo códigos y créditos, nada que identifique al estudiante."""
+    cursadas = [s for s in subjects if s.cursada]
+    direct = [s for s in cursadas if s.code in passed]
+    homologated = [s for s in cursadas if s.code not in passed]
+    log.info(
+        "record: creditos_cursados | directos=%d (%d materias) homologados=%d (%d materias) "
+        "aprobadas_historia=%d (%d créditos en el catálogo)",
+        sum(s.credits for s in direct),
+        len(direct),
+        sum(s.credits for s in homologated),
+        len(homologated),
+        len(passed),
+        sum(s.credits for s in subjects),
+    )
+    for s in homologated:
+        log.info("record: homologada | %s %dcr banco=%s", s.code, s.credits, s.elective_bank or "-")
+    unmatched = sorted(code for code in passed if code not in {s.code for s in subjects})
+    log.info("record: aprobadas_sin_par_en_el_pensum=%d %s", len(unmatched), unmatched)
 
 
 def _passed(source: RecordSource, program_code: str) -> dict[str, PassedSubject]:
