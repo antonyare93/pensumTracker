@@ -31,6 +31,9 @@ class ElectiveBank(BaseModel):
     credits_required: int | None
     credits_approved: int
     subject_codes: list[str]
+    # Con aprobadas: llegó al mínimo, o completó otro banco de su grupo de énfasis.
+    # None cuando no hay mínimo oficial para decidir.
+    satisfied: bool | None = None
 
 
 class AcademicRecord(BaseModel):

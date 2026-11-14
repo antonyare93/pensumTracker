@@ -78,8 +78,25 @@ def subject_status(
     return "locked"
 
 
+def _bank_satisfied(
+    name: str,
+    required: int | None,
+    passed: Mapping[str, int],
+    requirements: Mapping[str, int],
+    group: frozenset[str],
+) -> bool | None:
+    if not required:
+        # Sin mínimo (desconocido o 0, p.ej. práctica opcional): no se puede afirmar.
+        return None
+    if name in group:
+        return electives_done({n: requirements[n] for n in group}, passed, group)
+    return passed.get(name, 0) >= required
+
+
 def elective_banks(
-    subjects: Sequence[Subject], bank_requirements: Mapping[str, int]
+    subjects: Sequence[Subject],
+    bank_requirements: Mapping[str, int],
+    group: frozenset[str] = frozenset(),
 ) -> list[ElectiveBank]:
     """Bancos de electivas ordenados por nombre."""
     bank_subjects: dict[str, list[Subject]] = defaultdict(list)
@@ -87,8 +104,9 @@ def elective_banks(
         if s.elective_bank:
             bank_subjects[s.elective_bank].append(s)
 
+    passed = bank_passed(subjects)
     banks: list[ElectiveBank] = []
-    for bank_name, group in sorted(bank_subjects.items()):
+    for bank_name, members in sorted(bank_subjects.items()):
         required: int | None
         if bank_name in bank_requirements:
             required = bank_requirements[bank_name]
@@ -102,8 +120,9 @@ def elective_banks(
             ElectiveBank(
                 name=bank_name,
                 credits_required=required,
-                credits_approved=sum(s.credits for s in group if s.cursada),
-                subject_codes=[s.code for s in group],
+                credits_approved=sum(s.credits for s in members if s.cursada),
+                subject_codes=[s.code for s in members],
+                satisfied=_bank_satisfied(bank_name, required, passed, bank_requirements, group),
             )
         )
     return banks
@@ -183,6 +202,6 @@ def build_record(
         in_progress_credits=in_progress_credits,
         graduated=graduated,
         subjects=enriched,
-        elective_banks=elective_banks(enriched, requirements),
+        elective_banks=elective_banks(enriched, requirements, group),
         enrolled_outside_pensum=list(enrolled_outside_pensum),
     )
