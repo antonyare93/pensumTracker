@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from typing import Self
+
+from pydantic import BaseModel, model_validator
 
 
 class Subject(BaseModel):
@@ -50,3 +52,10 @@ class AcademicRecord(BaseModel):
     elective_banks: list[ElectiveBank] = []
     # Matriculadas que el pensum no trae: otra versión, otro programa o fuera del catálogo.
     enrolled_outside_pensum: list[EnrolledOutsidePensum] = []
+
+    @model_validator(mode="after")
+    def _avance_dentro_del_total(self) -> Self:
+        # El total es el del pensum (catálogo). Nada puede mostrar más avance que eso.
+        if self.progress_credits > self.total_credits:
+            raise ValueError("progress_credits no puede superar total_credits")
+        return self

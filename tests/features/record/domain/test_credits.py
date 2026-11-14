@@ -49,3 +49,10 @@ def test_registra_la_causa_cuando_la_version_no_coincide(caplog):
     resolve_total_credits(200, SUBJECTS, 4, {"B": 4}, 5)
     assert "causa=version_distinta" in caplog.text
     assert "page_version=4 efectiva=5" in caplog.text
+
+
+def test_regresion_tres_enfasis_no_inflan_el_total():
+    # Caso real 506: obligatorias + mínimos (tres énfasis de 15) daba 198 y 220 en vez de 168.
+    minimums = {"FÍSICA": 3, "SOCIO": 9, "PRÁCTICA": 12, "ÉNF A": 15, "ÉNF B": 15, "ÉNF C": 15}
+    total, _ = resolve_total_credits(168, SUBJECTS, 5, minimums, 5)
+    assert total == 168
