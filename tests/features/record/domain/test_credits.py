@@ -8,9 +8,10 @@ SUBJECTS = [
 ]
 
 
-def test_version_oficial_igual_suma_obligatorias_y_minimos():
-    total, banks = resolve_total_credits(200, SUBJECTS, 5, {"B": 4, "C": 3}, 5)
-    assert (total, banks) == (25, {"B": 4, "C": 3})
+def test_version_oficial_igual_usa_el_total_del_catalogo_y_los_minimos():
+    # Sumar obligatorias + mínimos infla el total: los énfasis son alternativos.
+    total, banks = resolve_total_credits(168, SUBJECTS, 5, {"B": 4, "C": 3}, 5)
+    assert (total, banks) == (168, {"B": 4, "C": 3})
 
 
 def test_devuelve_copia_de_los_minimos():

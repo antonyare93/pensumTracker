@@ -1,4 +1,3 @@
-
 """Lectura del portal: hace las peticiones y entrega lo que devuelven los parsers."""
 
 import logging

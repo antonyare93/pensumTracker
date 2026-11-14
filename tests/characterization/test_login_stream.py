@@ -67,7 +67,6 @@ def test_programa_unico(fake_portal_factory: PortalFactory):
         "program_info",
         "pensum",
         "pensum",
-        "program_info",
         "record",
     ]
     record = events[-1]
@@ -77,7 +76,9 @@ def test_programa_unico(fake_portal_factory: PortalFactory):
     assert _subject(record, 2000300)["status"] == "in_progress"
     assert _subject(record, 2000500)["status"] == "locked"
     assert _subject(record, 2000400)["status"] == "available"
-    assert events[4]["data"]["total_credits"] != 30
+    # El total es el del catálogo: nunca se infla con los mínimos de ayudame2.
+    assert record["data"]["total_credits"] == 30
+    assert record["data"]["progress_credits"] <= 30
     assert_matches_snapshot("programa_unico.ndjson", response.text)
 
 
