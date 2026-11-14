@@ -3,6 +3,11 @@
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 
+from app.features.record.domain.alternatives import (
+    alternative_group,
+    elective_credits,
+    electives_done,
+)
 from app.features.record.schemas import (
     AcademicRecord,
     ElectiveBank,
@@ -20,6 +25,15 @@ def bank_progress(subjects: Sequence[Subject]) -> dict[str, int]:
         if (s.cursada or s.cursando) and s.elective_bank:
             progress[s.elective_bank] += s.credits
     return dict(progress)
+
+
+def bank_passed(subjects: Sequence[Subject]) -> dict[str, int]:
+    """Créditos de electivas aprobadas, por banco. Es lo que cuenta para el avance."""
+    passed: dict[str, int] = defaultdict(int)
+    for s in subjects:
+        if not s.obligatoria and s.cursada and s.elective_bank:
+            passed[s.elective_bank] += s.credits
+    return dict(passed)
 
 
 def bank_satisfied(
@@ -125,19 +139,20 @@ def build_record(
     )
     progress = bank_progress(subjects)
 
+    group: frozenset[str] = frozenset()
     if requirements:
-        elective_progress = sum(
-            min(progress.get(name, 0), req) for name, req in requirements.items()
-        )
-        electives_satisfied = all(
-            progress.get(name, 0) >= req for name, req in requirements.items()
-        )
+        # Avance: solo aprobadas. El estado de las materias sí cuenta las en curso.
+        group = alternative_group(requirements, max(0, total_credits - obligatorias_total))
+        elective_progress = elective_credits(requirements, bank_passed(subjects), group)
+        electives_satisfied = electives_done(requirements, progress, group)
     else:
         electives_required = max(0, total_credits - obligatorias_total)
         elective_progress = min(electives_passed, electives_required)
         electives_satisfied = electives_passed + electives_in_progress >= electives_required
 
     def satisfied(bank: str | None) -> bool:
+        if bank in group:
+            return electives_done({n: requirements[n] for n in group}, progress, group)
         return bank_satisfied(bank, subjects, requirements, progress, electives_satisfied)
 
     enriched = [

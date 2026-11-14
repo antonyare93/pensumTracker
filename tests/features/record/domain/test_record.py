@@ -248,8 +248,12 @@ def test_electivas_sobrantes_no_tapan_obligatorias_faltantes():
     subs = [
         Subject(code="O1", name="O1", credits=10, obligatoria=True, cursada=True),
         Subject(code="O2", name="O2", credits=6, obligatoria=True, cursada=False),
-        Subject(code="E1", name="E1", credits=8, obligatoria=False, elective_bank="A", cursada=True),
-        Subject(code="E2", name="E2", credits=8, obligatoria=False, elective_bank="B", cursada=True),
+        Subject(
+            code="E1", name="E1", credits=8, obligatoria=False, elective_bank="A", cursada=True
+        ),
+        Subject(
+            code="E2", name="E2", credits=8, obligatoria=False, elective_bank="B", cursada=True
+        ),
     ]
     rec = build_record(
         student_name="X",
@@ -264,3 +268,28 @@ def test_electivas_sobrantes_no_tapan_obligatorias_faltantes():
     )
     assert rec.progress_credits == 10 + 4  # electivas topadas en 20 - 16
     assert rec.graduated is False
+
+
+def test_avance_no_cuenta_electivas_en_curso():
+    subs = [
+        Subject(code="O1", name="O1", credits=10, obligatoria=True, cursada=True),
+        Subject(
+            code="E1", name="E1", credits=4, obligatoria=False, elective_bank="A", cursada=True
+        ),
+        Subject(
+            code="E2", name="E2", credits=4, obligatoria=False, elective_bank="A", cursando=True
+        ),
+    ]
+    rec = build_record(
+        student_name="X",
+        program_name="Y",
+        program_code="506",
+        pensum_version=5,
+        version_actual=5,
+        versiones=[5],
+        total_credits=18,
+        subjects=subs,
+        bank_requirements={"A": 8},
+    )
+    assert rec.progress_credits == 14
+    assert rec.progress_credits <= rec.completed_credits
