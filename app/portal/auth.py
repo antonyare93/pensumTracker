@@ -45,6 +45,13 @@ def reauth(session: PortalSession, host: str, password: str) -> str | None:
         return None
 
     if data.get("error") or "hash" not in data:
+        # El mensaje del portal no lleva datos del estudiante; el hash nunca se registra.
+        log.warning(
+            "reauth %s: sin hash | claves=%s error=%r",
+            host,
+            sorted(data) if isinstance(data, dict) else type(data).__name__,
+            data.get("error") if isinstance(data, dict) else None,
+        )
         return None
 
     h = data["hash"]
