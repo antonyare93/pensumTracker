@@ -133,8 +133,6 @@ class RecordStage:
             official.bank_minimums if official else {},
             program.pensum_version,
         )
-        if total_credits != program.catalog_total:
-            yield program.info(total_credits)
 
         record = _record(student, program, total_credits, subjects, bank_requirements, outside)
         ctx.results["record"] = record

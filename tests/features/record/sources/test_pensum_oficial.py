@@ -32,3 +32,9 @@ def test_banco_con_parentesis_coma_y_barra_se_lee_completo():
     result = parse_official_pensum(html)
     assert result is not None
     assert result.bank_minimums == {"CURSO ALTERNATIVO DE FÍSICA (A/B), II": 6}
+
+
+def test_encabezado_con_entidad_html_se_reconoce():
+    html = fixture("pensum_oficial.html").replace("PÉNSUM", "P&Eacute;NSUM")
+    assert "PÉNSUM DEL PROGRAMA" not in html
+    assert parse_official_pensum(html) == parse_official_pensum(fixture("pensum_oficial.html"))

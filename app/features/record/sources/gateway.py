@@ -1,6 +1,7 @@
 """Lectura del portal: hace las peticiones y entrega lo que devuelven los parsers."""
 
 import logging
+import re
 from typing import Protocol
 from urllib.parse import urlsplit
 
@@ -41,6 +42,25 @@ class RecordSource(Protocol):
     def program(self, program_code: str) -> CursumProgram | None: ...
 
     def curriculum(self, program_code: str, version: int) -> list[CursumSubject]: ...
+
+
+def _title(html: str) -> str:
+    match = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    return " ".join(match.group(1).split())[:80] if match else ""
+
+
+def _markers(html: str) -> dict[str, int]:
+    """Cuántas veces aparece cada texto que busca el parser. Sin contenido del estudiante."""
+    text = html.upper()
+    return {
+        "PÉNSUM DEL PROGRAMA": text.count("PÉNSUM DEL PROGRAMA"),
+        "PENSUM DEL PROGRAMA": text.count("PENSUM DEL PROGRAMA"),
+        "P&EACUTE;NSUM": text.count("P&EACUTE;NSUM"),
+        "PÃ‰NSUM": text.count("PÃ‰NSUM"),
+        "DEBES CURSAR AL MENOS": text.count("DEBES CURSAR AL MENOS"),
+        "PROGRAMA": text.count("PROGRAMA"),
+        "(V": len(re.findall(r"\(V\s*\d+\)", text)),
+    }
 
 
 def _parse_json(resp: requests.Response, context: str) -> object:
@@ -142,7 +162,18 @@ class PortalRecordSource:
 
         pensum = None if _RELOGIN in resp.url else pensum_oficial.parse_official_pensum(resp.text)
         if pensum is None:
-            log.warning("official_pensum: no se pudo leer el pensum | url=%s", resp.url)
+            log.warning(
+                "official_pensum: no se pudo leer el pensum | url=%s status=%d bytes=%d "
+                "encoding=%s relogin=%s selector=%s titulo=%r marcadores=%s",
+                resp.url,
+                resp.status_code,
+                len(resp.content),
+                resp.encoding,
+                _RELOGIN in resp.text,
+                "LISTADO DE PROGRAMAS" in resp.text,
+                _title(resp.text),
+                _markers(resp.text),
+            )
         self._official_pensum = pensum
         self._official_pensum_loaded = True
         return pensum
