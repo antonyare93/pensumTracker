@@ -293,3 +293,57 @@ def test_avance_no_cuenta_electivas_en_curso():
     )
     assert rec.progress_credits == 14
     assert rec.progress_credits <= rec.completed_credits
+
+
+def _banks_record(passed: dict[str, int], requirements: dict[str, int], total: int):
+    subs = [Subject(code="O", name="O", credits=10, obligatoria=True, cursada=True)]
+    for bank, credits in passed.items():
+        if credits:
+            subs.append(
+                Subject(
+                    code=f"E{bank}",
+                    name=bank,
+                    credits=credits,
+                    obligatoria=False,
+                    elective_bank=bank,
+                    cursada=True,
+                )
+            )
+    for bank in requirements:
+        subs.append(
+            Subject(code=f"X{bank}", name=bank, credits=4, obligatoria=False, elective_bank=bank)
+        )
+    rec = build_record(
+        student_name="X",
+        program_name="Y",
+        program_code="506",
+        pensum_version=5,
+        version_actual=5,
+        versiones=[5],
+        total_credits=total,
+        subjects=subs,
+        bank_requirements=requirements,
+    )
+    return {b.name: b.satisfied for b in rec.elective_banks}
+
+
+def test_banco_cumplido_solo_si_llega_al_minimo():
+    got = _banks_record({"A": 3, "B": 0}, {"A": 3, "B": 12}, 10 + 15)
+    assert got == {"A": True, "B": False}
+
+
+def test_un_enfasis_completo_cumple_los_demas_del_grupo():
+    req = {"S": 3, "EA": 15, "EB": 15, "EC": 15}
+    got = _banks_record({"S": 3, "EA": 15, "EB": 3}, req, 10 + 3 + 15)
+    assert got == {"S": True, "EA": True, "EB": True, "EC": True}
+
+
+def test_enfasis_sin_completar_no_cumple_ninguno():
+    req = {"S": 3, "EA": 15, "EB": 15, "EC": 15}
+    got = _banks_record({"S": 3, "EA": 6}, req, 10 + 3 + 15)
+    assert got == {"S": True, "EA": False, "EB": False, "EC": False}
+
+
+def test_sin_minimos_no_se_sabe():
+    got = _banks_record({"A": 3}, {}, 20)
+    assert got == {"A": None}
