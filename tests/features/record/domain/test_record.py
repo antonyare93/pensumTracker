@@ -241,3 +241,26 @@ def test_elective_banks_banco_sin_cupo_oficial():
     assert with_reqs == {"A": 3, "P": 0}
     # Sin cupos oficiales el requisito es desconocido; sumar el catálogo lo inflaba (#6).
     assert without_reqs == {"A": None, "P": None}
+
+
+def test_electivas_sobrantes_no_tapan_obligatorias_faltantes():
+    # Caso real 506 v3: 180 aprobados, faltan obligatorias y el avance daba 168/168.
+    subs = [
+        Subject(code="O1", name="O1", credits=10, obligatoria=True, cursada=True),
+        Subject(code="O2", name="O2", credits=6, obligatoria=True, cursada=False),
+        Subject(code="E1", name="E1", credits=8, obligatoria=False, elective_bank="A", cursada=True),
+        Subject(code="E2", name="E2", credits=8, obligatoria=False, elective_bank="B", cursada=True),
+    ]
+    rec = build_record(
+        student_name="X",
+        program_name="Y",
+        program_code="506",
+        pensum_version=3,
+        version_actual=3,
+        versiones=[3],
+        total_credits=20,
+        subjects=subs,
+        bank_requirements={"A": 8, "B": 8},
+    )
+    assert rec.progress_credits == 10 + 4  # electivas topadas en 20 - 16
+    assert rec.graduated is False

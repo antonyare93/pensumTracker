@@ -146,8 +146,13 @@ def build_record(
 
     completed_credits = sum(s.credits for s in enriched if s.cursada)
     in_progress_credits = sum(s.credits for s in enriched if s.cursando and not s.cursada)
-    progress_credits = min(total_credits, obligatorias_passed + elective_progress)
-    graduated = progress_credits >= total_credits
+    # Las electivas nunca aportan más que el hueco que dejan las obligatorias:
+    # si no, las sobrantes tapan obligatorias faltantes y el avance llega al total.
+    elective_cap = max(0, total_credits - obligatorias_total)
+    progress_credits = min(
+        total_credits, obligatorias_passed + min(elective_progress, elective_cap)
+    )
+    graduated = progress_credits >= total_credits and obligatorias_passed >= obligatorias_total
 
     return AcademicRecord(
         student_name=student_name,
