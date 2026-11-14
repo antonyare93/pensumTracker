@@ -11,10 +11,11 @@ log = logging.getLogger(__name__)
 
 
 def parse_official_pensum(html: str) -> OfficialPensum | None:
-    if "PÉNSUM DEL PROGRAMA" not in html:
-        return None
+    # Se busca en el texto ya decodificado: el portal a veces escribe "P&eacute;nsum".
     soup = BeautifulSoup(html, "lxml")
     text = soup.get_text("\n", strip=True)
+    if "PÉNSUM DEL PROGRAMA" not in text.upper():
+        return None
 
     version: int | None = None
     version_m = re.search(
